@@ -1,0 +1,13 @@
+archive/
+project_plan.md
+AGENTS.md
+.env
+.aws/
+*.pem
+__pycache__/
+*.pyc
+.DS_Store
+synthea/*.jar
+synthea/output/
+logs/
+config/ 
