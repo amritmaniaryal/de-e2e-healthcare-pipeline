@@ -1,6 +1,4 @@
 archive/
-project_plan.md
-AGENTS.md
 .env
 .aws/
 *.pem
