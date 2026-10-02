@@ -37,7 +37,7 @@ def upload_one_file(table: str, ingestion_date: str) -> dict:
 
     # No credentials passed on purpose. boto3 picks up AWS_ACCESS_KEY_ID,
     # AWS_SECRET_ACCESS_KEY and AWS_DEFAULT_REGION from the environment
-    # (compose injects them from ../.env). Never hardcode keys.
+    # (compose injects them from ../.env).
     s3 = boto3.client("s3")
 
     # upload_file streams from disk and auto-switches to multipart for big
