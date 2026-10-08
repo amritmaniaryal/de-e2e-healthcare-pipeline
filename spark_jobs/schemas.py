@@ -220,7 +220,11 @@ TABLES: dict[str, TableSpec] = {
     "payers": TableSpec(schema=PAYERS, primary_key=("Id",)),
     "payer_transitions": TableSpec(
         schema=PAYER_TRANSITIONS,
-        primary_key=("PATIENT", "MEMBERID", "START_DATE", "PAYER"),
+        # NOT (PATIENT, MEMBERID, START_DATE, PAYER): MEMBERID is null for all
+        # 10,521 government-payer rows (Medicare / Medicaid have no member id),
+        # so including it silently discards 28% of the table. Verified: this key
+        # is unique across all 37,700 rows with zero nulls.
+        primary_key=("PATIENT", "START_DATE", "PAYER"),
     ),
     "conditions": TableSpec(
         schema=CONDITIONS,
