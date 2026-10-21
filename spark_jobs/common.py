@@ -48,6 +48,18 @@ def build_spark(app_name: str) -> SparkSession:
             "spark.hadoop.fs.s3a.endpoint.region",
             os.environ.get("AWS_DEFAULT_REGION", "us-east-2"),
         )
+        .config(
+            "spark.hadoop.fs.s3a.endpoint.region",
+            os.environ.get("AWS_DEFAULT_REGION", "us-east-2"),
+        )
+        # Spark writes a zero-byte _SUCCESS marker into every output directory.
+        # It is bookkeeping, not data, and every S3 reader (Snowflake COPY INTO,
+        # Athena, DuckDB, pandas) has to be told to skip it. Turn it off here
+        # instead of working around it at each reader.
+        .config(
+            "spark.hadoop.mapreduce.fileoutputcommitter.marksuccessfuljobs",
+            "false",
+        )
         .getOrCreate()
     )
 
