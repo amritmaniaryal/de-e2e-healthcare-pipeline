@@ -19,20 +19,73 @@ transactions), which is the point — the pipeline has to handle both.
 [Synthea synthetic generator]  (Java, run locally)
         │  18 CSV exports
         ▼
-[Airflow: extract_raw_data] ────► [S3  raw/]        11 tables, ~499 MB
-        │                           partitioned ingest_date=YYYY-MM-DD
-        ▼
-[Airflow: process_raw_data]
-   ├── validate_table.py  (Spark)   schema-fidelity gate, exits 1 on failure
-   └── clean_table.py     (Spark)   dedupe → type → Parquet
+┌─ Airflow: healthcare_pipeline ───────────────────────────────────┐
+│                                                                  │
+│  extract (11 tasks)   upload CSVs untouched                      │
+│        │                    ▼                                    │
+│        │            S3  raw/<table>/ingestion_date=<date>/       │
+│        ▼                                                         │
+│  transform (11 tasks) validate_table.py  ← schema-fidelity gate   │
+│                       clean_table.py     ← dedupe, type, Parquet  │
+│        │                    ▼                                    │
+│        │            S3  processed/<table>/_ingested_date=<date>/  │
+│        ▼                                                         │
+│  load (11 tasks)      TRUNCATE + COPY INTO                        │
+│                       Snowflake  healthcare.raw.<table>           │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
         │
         ▼
-[S3  processed/]                     Parquet, partitioned _ingested_date=…
-        │
-        ▼
-[Snowflake] ──► [dbt: staging → intermediate → marts] ──► [BI dashboard]
-  (Week 3)                 (Week 4)                          (Week 5)
+[dbt: staging → intermediate → marts] ──► [BI dashboard]
+            (Week 4)                        (Week 5)
 ```
+
+---
+
+## Pipeline
+
+One DAG, `healthcare_pipeline`, with three stages. Each stage is **one task
+definition** fanned out over the eleven tables using dynamic task mapping — 33
+task instances in total, but only three definitions to read.
+
+```
+extract (11)  ──►  transform (11)  ──►  load (11)
+```
+
+![Airflow DAG view: healthcare_pipeline with extract, transform and load](docs/airflow-dag.png)
+
+*The DAG after a full run — graph on the left, latest run green. `extract`,
+`transform` and `load` are three task definitions that fan out to 11 instances
+each at runtime.*
+
+| stage | what it does | lands in |
+|---|---|---|
+| `extract` | uploads each Synthea CSV, byte-for-byte | `s3://…/raw/<table>/ingestion_date=<date>/` |
+| `transform` | validates then cleans with Spark | `s3://…/processed/<table>/_ingested_date=<date>/` |
+| `load` | `TRUNCATE` + `COPY INTO` | `healthcare.raw.<table>` |
+
+**One date for the whole run.** `{{ dag_run.run_after | ds }}` resolves once and
+is handed to every stage, so `extract` writes `ingestion_date=X` and `transform`
+reads exactly `X`. An earlier two-DAG design had to *guess* which partition to
+read by listing S3 and taking the newest — this removes the guess entirely.
+
+**Stage barriers.** Chaining mapped tasks means every `transform` waits for
+every `extract` to finish. At eleven tables that costs about a minute. If
+extraction ever became the long pole, the fix is per-table chaining via mapped
+task groups.
+
+**Concurrency is capped at two.** Each `transform` task starts its own Spark JVM
+that wants the machine's cores; eleven at once would thrash.
+
+**Granularity is per table, not per stage.** A `transform` task runs validate
+*then* clean for its own table. So a failure on `claims_transactions` — 902,713
+rows and about 60% of total runtime — retries that table alone rather than all
+eleven.
+
+**Full refresh, deliberately.** `clean_table.py` overwrites each
+`processed/<table>/` directory wholesale, and `load` truncates before copying.
+Simple and always self-consistent; it is the wrong choice for an append-only
+fact table that grows daily, which is a trade-off discussed in the design notes.
 
 ---
 
@@ -41,12 +94,15 @@ transactions), which is the point — the pipeline has to handle both.
 | Stage | State |
 |---|---|
 | Synthetic data generation | ✅ 1,096 patients, 18 CSVs |
-| Ingestion → S3 `raw/` | ✅ Airflow DAG, 11/11 tasks green |
-| Spark clean → S3 `processed/` | ✅ Airflow DAG, 11/11 tasks green, ~9.8 min |
+| Ingestion → S3 `raw/` | ✅ 11 tasks |
+| Spark clean → S3 `processed/` | ✅ 11 tasks, ~9.8 min |
 | Data-quality gate | ✅ Schema-fidelity check before every clean |
-| Snowflake load | ⬜ Week 3 |
+| Snowflake load | ✅ 11 tasks, counts verified |
 | dbt transformation | ⬜ Week 4 |
 | CI/CD, BI layer, docs | ⬜ Week 5 |
+
+The full chain — `extract` → `transform` → `load` — runs as **33 mapped tasks in
+one DAG**, all green.
 
 **~1.32M rows** across 11 tables, from 1,096 patients over ten years of
 simulated clinical history.
@@ -89,16 +145,16 @@ docker compose up -d
 Airflow UI: <http://localhost:8080> (`airflow` / `airflow`).
 
 Generate source data and place the CSVs at `synthea/output/csv/` — see
-[Synthea](https://synthea.mitre.org/) for the generator. Then trigger the DAGs
-in order:
+[Synthea](https://synthea.mitre.org/) for the generator. Then trigger the
+pipeline:
 
 ```bash
-docker compose exec -T airflow-scheduler airflow dags unpause extract_raw_data
-docker compose exec -T airflow-scheduler airflow dags unpause process_raw_data
-
-docker compose exec -T airflow-scheduler airflow dags trigger extract_raw_data
-docker compose exec -T airflow-scheduler airflow dags trigger process_raw_data
+docker compose exec -T airflow-scheduler airflow dags unpause healthcare_pipeline
+docker compose exec -T airflow-scheduler airflow dags trigger healthcare_pipeline
 ```
+
+A full run takes roughly 15–20 minutes: it uploads ~500 MB, re-runs Spark over
+all eleven tables, then reloads Snowflake.
 
 > New DAGs are created **paused** by default. A paused DAG will not run its
 > tasks even when triggered manually — the run is created and then sits idle.
@@ -116,14 +172,51 @@ s3:GetObject      s3:PutObject      s3:DeleteObject      s3:ListBucket
 `_temporary/` prefix and then renaming, and on S3 a rename is a copy followed
 by a delete.
 
+### Required Snowflake setup
+
+The `load` stage needs a connection named `snowflake_default` in Airflow:
+
+```bash
+docker compose exec -T airflow-scheduler airflow connections add snowflake_default \
+  --conn-type snowflake \
+  --conn-login <user> \
+  --conn-password '<password>' \
+  --conn-schema raw \
+  --conn-extra '{"account":"<org>-<account>","warehouse":"<warehouse>","database":"healthcare","role":"<role>"}'
+```
+
+The `account` value must be the **org-qualified** identifier (`myorg-myaccount`),
+not the bare account locator. A bare locator resolves only in Snowflake's
+original US-West region; elsewhere the connector fails at login with a
+misleading `404 Not Found` that never reaches password validation.
+
+Snowflake reads the bucket through a **storage integration** rather than stored
+S3 keys, so no AWS credentials are held in Snowflake and the role it assumes is
+read-only and scoped to `processed/*`.
+
+Each `raw` table is created once, outside the DAG:
+
+```sql
+CREATE TABLE healthcare.raw.<table>
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(
+      INFER_SCHEMA(
+        LOCATION    => '@processed_stage/<table>/',
+        FILE_FORMAT => 'healthcare.raw.parquet_ff',
+        IGNORE_CASE => TRUE     -- otherwise every column name needs quoting, forever
+      )
+    )
+  );
+```
+
 ---
 
 ## Repository layout
 
 ```
 dags/                    Airflow DAGs
-  extract_raw_data.py      ingest Synthea CSVs -> S3 raw/
-  process_raw_data.py      validate + clean each table with Spark
+  healthcare_pipeline.py   extract -> transform -> load, one task per table
 include/ingest/          helper code importable by DAGs
 spark_jobs/              PySpark entry points
   common.py                shared session, S3 paths, IO helpers
@@ -225,12 +318,12 @@ already produced two wrong answers.
 
 ## Roadmap
 
-- **Week 3** — Snowflake warehouse; load `processed/` into a `raw` schema;
-  merge the two DAGs into one chained pipeline
 - **Week 4** — dbt models: staging → intermediate → marts, with tests and
   generated lineage docs
 - **Week 5** — GitHub Actions running `dbt build` on PR, failure alerting, a
   BI dashboard, and screenshots here
+- **After** — put the pipeline on a schedule (it is manual-trigger only today),
+  and make the large fact table an incremental load instead of a full refresh
 
 ---
 
