@@ -52,11 +52,11 @@ task instances in total, but only three definitions to read.
 extract (11)  ──►  transform (11)  ──►  load (11)
 ```
 
-![Airflow DAG view: healthcare_pipeline with extract, transform and load](docs/airflow-dag.png)
+![Airflow run detail: 33 task instances across extract, transform and load](docs/airflow-run-detail.png)
 
-*The DAG after a full run — graph on the left, latest run green. `extract`,
-`transform` and `load` are three task definitions that fan out to 11 instances
-each at runtime.*
+*A completed run — **33 task instances, all successful**. Three task definitions
+fanned out to eleven mapped instances each; `Map Index` 0–10 is the table, in
+alphabetical order. The graph panel on the left is the three-stage shape.*
 
 | stage | what it does | lands in |
 |---|---|---|
