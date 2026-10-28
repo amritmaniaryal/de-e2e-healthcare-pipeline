@@ -12,10 +12,6 @@
       * never quote identifiers. Snowflake folds unquoted names to uppercase,
         which matches how the columns were loaded; quoting breaks that match.
 
-    Why the three-part shape (source -> renamed -> final select):
-    it separates "where the data comes from" from "what it is called", so a
-    later cast or filter has an obvious place to go that does not disturb the
-    column list.
 #}
 
 with source as (
