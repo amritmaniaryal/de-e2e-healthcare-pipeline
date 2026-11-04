@@ -43,7 +43,9 @@ claim_lines as (
     select
         claim_id,
         count(*)            as line_count,
-        sum(amount)         as total_amount,
+        -- CHARGE only: raw `amount` is also populated on TRANSFERIN rows,
+        -- which is money moving between payers, not new spend
+        sum(case when transaction_type = 'CHARGE' then amount end) as total_charge_amount,
         sum(payments)       as total_payments,
         sum(adjustments)    as total_adjustments,
         sum(transfers)      as total_transfers,
@@ -82,7 +84,7 @@ enriched as (
 
         -- claim-line totals; coalesced so a claim with no lines reads as zero
         coalesce(l.line_count, 0)           as line_count,
-        coalesce(l.total_amount, 0)         as total_amount,
+        coalesce(l.total_charge_amount, 0)  as total_charge_amount,
         coalesce(l.total_payments, 0)       as total_payments,
         coalesce(l.total_adjustments, 0)    as total_adjustments,
         coalesce(l.total_transfers, 0)      as total_transfers,
