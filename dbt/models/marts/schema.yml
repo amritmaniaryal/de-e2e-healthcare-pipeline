@@ -1,0 +1,132 @@
+version: 2
+
+models:
+  - name: dim_patients
+    description: One row per patient (1,096). Demographics and derived age/income bands.
+    columns:
+      - name: patient_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: birth_date
+        tests:
+          - not_null
+      - name: age_band
+        description: Includes 'Unknown' as a null guard; 0 rows use it today.
+        tests:
+          - accepted_values:
+              values: ['0-17', '18-34', '35-49', '50-64', '65+', 'Unknown']
+      - name: income_band
+        tests:
+          - accepted_values:
+              values: ['<25k', '25k-50k', '50k-75k', '75k-100k', '100k+', 'Unknown']
+
+  - name: dim_providers
+    description: One row per provider (152), with organisation name attached.
+    columns:
+      - name: provider_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: npi
+        description: Real-world business key. Unique per provider.
+        tests:
+          - not_null
+          - unique
+      - name: organization_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_organizations')
+              field: organization_id
+
+  - name: fct_claims_transactions
+    description: One row per claim line (902,713). All four transaction types.
+    columns:
+      - name: claim_transaction_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: claim_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_claims')
+              field: claim_id
+      - name: patient_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_patients')
+              field: patient_id
+      - name: provider_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_providers')
+              field: provider_id
+      - name: service_date
+        description: >
+          Comes from the left join to stg_claims. A null here means the claim
+          linkage broke, which is exactly what this test is for.
+        tests:
+          - not_null
+      - name: transaction_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['CHARGE', 'PAYMENT', 'TRANSFERIN', 'TRANSFEROUT']
+      - name: charge_amount
+        description: Null outside CHARGE rows by design -- do not add not_null.
+
+  - name: agg_claims_by_provider
+    description: Claims volume and cost per provider per service month (15,174).
+    columns:
+      - name: provider_id
+        tests:
+          - not_null
+      - name: service_month
+        tests:
+          - not_null
+      - name: claim_count
+        tests:
+          - not_null
+
+  - name: agg_cost_per_procedure
+    description: Cost and volume per procedure code (674).
+    columns:
+      - name: procedure_code
+        description: String on purpose -- SNOMED and zero-padded short codes.
+        tests:
+          - not_null
+          - unique
+      - name: charge_payment_gap
+        tests:
+          - not_null
+
+  - name: agg_utilization_trends
+    description: Encounters per month per encounter class (3,276).
+    columns:
+      - name: encounter_month
+        tests:
+          - not_null
+      - name: encounter_class
+        tests:
+          - accepted_values:
+              values:
+                - ambulatory
+                - wellness
+                - outpatient
+                - emergency
+                - urgentcare
+                - inpatient
+                - home
+                - snf
+                - virtual
+                - hospice
+      - name: encounter_count
+        tests:
+          - not_null

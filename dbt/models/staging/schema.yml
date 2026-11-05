@@ -1,0 +1,90 @@
+version: 2
+
+# Staging tests pin the RENAMED key. Source tests can only check the original
+# column names, so a rename slip would pass every raw test and break everything
+# downstream. These are deliberately thin: keys only, no blanket coverage.
+
+models:
+  - name: stg_patients
+    columns:
+      - name: patient_id
+        tests: [not_null, unique]
+
+  - name: stg_providers
+    columns:
+      - name: provider_id
+        tests: [not_null, unique]
+      - name: npi
+        tests: [not_null, unique]
+
+  - name: stg_organizations
+    columns:
+      - name: organization_id
+        tests: [not_null, unique]
+
+  - name: stg_payers
+    columns:
+      - name: payer_id
+        tests: [not_null, unique]
+
+  - name: stg_encounters
+    columns:
+      - name: encounter_id
+        tests: [not_null, unique]
+
+  - name: stg_claims
+    columns:
+      - name: claim_id
+        tests: [not_null, unique]
+
+  - name: stg_claims_transactions
+    columns:
+      - name: claim_transaction_id
+        tests: [not_null, unique]
+
+  # The four event tables have no single-column key, so individual columns are
+  # not unique -- only not_null applies. member_id is excluded on purpose: it is
+  # null for every government-payer row.
+  - name: stg_payer_transitions
+    columns:
+      - name: patient_id
+        tests: [not_null]
+      - name: start_date
+        tests: [not_null]
+      - name: payer_id
+        tests: [not_null]
+
+  - name: stg_conditions
+    columns:
+      - name: patient_id
+        tests: [not_null]
+      - name: encounter_id
+        tests: [not_null]
+      - name: condition_code
+        tests: [not_null]
+      - name: started_at
+        tests: [not_null]
+
+  - name: stg_medications
+    columns:
+      - name: patient_id
+        tests: [not_null]
+      - name: encounter_id
+        tests: [not_null]
+      - name: payer_id
+        tests: [not_null]
+      - name: medication_code
+        tests: [not_null]
+      - name: started_at
+        tests: [not_null]
+
+  - name: stg_procedures
+    columns:
+      - name: patient_id
+        tests: [not_null]
+      - name: encounter_id
+        tests: [not_null]
+      - name: procedure_code
+        tests: [not_null]
+      - name: started_at
+        tests: [not_null]

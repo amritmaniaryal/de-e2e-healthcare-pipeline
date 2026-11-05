@@ -1,17 +1,89 @@
 version: 2
+
 sources:
   - name: raw
+    description: >
+      Landing zone loaded from S3 by the healthcare_pipeline DAG. Typed by the
+      Spark layer from explicit schemas, then loaded with COPY INTO.
     database: healthcare
     schema: raw
+
     tables:
+      # Seven tables have a single-column primary key. Testing it here means a
+      # broken load fails at the source, before it reaches staging or marts.
       - name: patients
+        columns:
+          - name: Id
+            tests: [not_null, unique]
+
       - name: providers
+        columns:
+          - name: Id
+            tests: [not_null, unique]
+
       - name: organizations
+        columns:
+          - name: Id
+            tests: [not_null, unique]
+
       - name: payers
-      - name: payer_transitions
-      - name: conditions
-      - name: medications
+        columns:
+          - name: Id
+            tests: [not_null, unique]
+
       - name: encounters
-      - name: procedures
+        columns:
+          - name: Id
+            tests: [not_null, unique]
+
       - name: claims
+        columns:
+          - name: Id
+            tests: [not_null, unique]
+
       - name: claims_transactions
+        columns:
+          # Uppercase ID -- the only table that is not Id.
+          - name: ID
+            tests: [not_null, unique]
+
+      # The remaining four have no Id: they are event logs keyed on
+      # (patient, encounter/environment, code, start). Individual columns are
+      # therefore not unique, but each key component is non-null, so not_null
+      # is the meaningful assertion. `start` is skipped on three of them
+      # because it is a reserved word in Snowflake.
+      - name: payer_transitions
+        columns:
+          - name: PATIENT
+            tests: [not_null]
+          - name: START_DATE
+            tests: [not_null]
+          - name: PAYER
+            tests: [not_null]
+
+      - name: conditions
+        columns:
+          - name: PATIENT
+            tests: [not_null]
+          - name: ENCOUNTER
+            tests: [not_null]
+          - name: CODE
+            tests: [not_null]
+
+      - name: medications
+        columns:
+          - name: PATIENT
+            tests: [not_null]
+          - name: ENCOUNTER
+            tests: [not_null]
+          - name: CODE
+            tests: [not_null]
+
+      - name: procedures
+        columns:
+          - name: PATIENT
+            tests: [not_null]
+          - name: ENCOUNTER
+            tests: [not_null]
+          - name: CODE
+            tests: [not_null]
