@@ -96,10 +96,12 @@ Three layers, 19 models, 95 tests. `staging` renames the raw tables 1:1,
 
 ![dbt lineage: eleven raw sources through staging and intermediate to six marts](docs/dbt-lineage.png)
 
-*The full lineage graph. Green nodes are the eleven raw source tables, blue are
-staging and intermediate models, purple are the six marts. The five `assert_*`
-nodes are custom tests — they appear in the graph because dbt derives their
-dependencies from the models they `ref()`.*
+*The full lineage graph: eleven green raw sources, then staging, intermediate
+and the six marts. `agg_utilization_trends` is selected (pink), which traces the
+path that builds it — `raw.encounters` → `stg_encounters` →
+`int_encounters_enriched` → the mart. The five `assert_*` nodes are custom
+tests; they appear because dbt derives their dependencies from the models they
+`ref()`.*
 
 | layer | models | materialised as | purpose |
 |---|---|---|---|
