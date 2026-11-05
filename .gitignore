@@ -16,5 +16,4 @@ dbt/logs/
 dbt/.user.yml
 
 # headless Chrome profiles used by tools/shot_dbt_docs.py
-.chrome-cdp/
-.chrome-tmp/
+.chrome-*/
