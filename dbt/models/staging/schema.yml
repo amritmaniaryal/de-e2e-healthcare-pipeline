@@ -6,11 +6,13 @@ version: 2
 
 models:
   - name: stg_patients
+    description: Patients, renamed to snake_case. 1,096 rows.
     columns:
       - name: patient_id
         tests: [not_null, unique]
 
   - name: stg_providers
+    description: Providers, renamed. SPECIALITY fixed to specialty. 152 rows.
     columns:
       - name: provider_id
         tests: [not_null, unique]
@@ -18,26 +20,31 @@ models:
         tests: [not_null, unique]
 
   - name: stg_organizations
+    description: Organisations, renamed. 152 rows.
     columns:
       - name: organization_id
         tests: [not_null, unique]
 
   - name: stg_payers
+    description: Payers, renamed. 10 rows.
     columns:
       - name: payer_id
         tests: [not_null, unique]
 
   - name: stg_encounters
+    description: Encounters, renamed. 57,592 rows.
     columns:
       - name: encounter_id
         tests: [not_null, unique]
 
   - name: stg_claims
+    description: Claim headers, renamed. 97,394 rows.
     columns:
       - name: claim_id
         tests: [not_null, unique]
 
   - name: stg_claims_transactions
+    description: Claim lines, renamed. 902,713 rows. Source key column is ID.
     columns:
       - name: claim_transaction_id
         tests: [not_null, unique]
@@ -46,6 +53,7 @@ models:
   # not unique -- only not_null applies. member_id is excluded on purpose: it is
   # null for every government-payer row.
   - name: stg_payer_transitions
+    description: Payer membership, renamed. 37,700 rows. No primary key.
     columns:
       - name: patient_id
         tests: [not_null]
@@ -55,6 +63,7 @@ models:
         tests: [not_null]
 
   - name: stg_conditions
+    description: Diagnoses, renamed. 34,727 rows. No primary key.
     columns:
       - name: patient_id
         tests: [not_null]
@@ -66,6 +75,7 @@ models:
         tests: [not_null]
 
   - name: stg_medications
+    description: Prescriptions, renamed. 39,729 rows. No primary key.
     columns:
       - name: patient_id
         tests: [not_null]
@@ -79,6 +89,7 @@ models:
         tests: [not_null]
 
   - name: stg_procedures
+    description: Procedures, renamed. 151,636 rows. No primary key.
     columns:
       - name: patient_id
         tests: [not_null]

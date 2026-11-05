@@ -12,12 +12,15 @@ models:
       - name: birth_date
         tests:
           - not_null
+      - name: age
+        description: Years at the fixed reference date 2026-09-26, not today.
       - name: age_band
         description: Includes 'Unknown' as a null guard; 0 rows use it today.
         tests:
           - accepted_values:
               values: ['0-17', '18-34', '35-49', '50-64', '65+', 'Unknown']
       - name: income_band
+        description: Order with income_band_order -- text bands do not sort.
         tests:
           - accepted_values:
               values: ['<25k', '25k-50k', '50k-75k', '75k-100k', '100k+', 'Unknown']
@@ -35,6 +38,8 @@ models:
         tests:
           - not_null
           - unique
+      - name: specialty
+        description: Constant in this dataset -- one distinct value.
       - name: organization_id
         tests:
           - not_null
@@ -81,6 +86,8 @@ models:
               values: ['CHARGE', 'PAYMENT', 'TRANSFERIN', 'TRANSFEROUT']
       - name: charge_amount
         description: Null outside CHARGE rows by design -- do not add not_null.
+      - name: paid_amount
+        description: Null outside PAYMENT rows by design.
 
   - name: agg_claims_by_provider
     description: Claims volume and cost per provider per service month (15,174).
@@ -89,11 +96,19 @@ models:
         tests:
           - not_null
       - name: service_month
+        description: Month of service_date.
         tests:
           - not_null
       - name: claim_count
+        description: Claims in that provider-month. Sums to 97,394 overall.
         tests:
           - not_null
+      - name: total_charged
+        description: Sum of CHARGE amounts. Excludes TRANSFERIN.
+      - name: total_paid
+        description: Sum of PAYMENT amounts.
+      - name: avg_paid_per_claim
+        description: total_paid divided by claim_count.
 
   - name: agg_cost_per_procedure
     description: Cost and volume per procedure code (674).
@@ -103,7 +118,14 @@ models:
         tests:
           - not_null
           - unique
+      - name: total_charge
+        description: Sum of CHARGE amounts.
+      - name: total_paid
+        description: Null for 3 codes that were charged but never paid.
+      - name: avg_charge_per_unit
+        description: Degenerate here -- every charge row has exactly 1 unit.
       - name: charge_payment_gap
+        description: total_charge minus total_paid; the full charge when unpaid.
         tests:
           - not_null
 
@@ -111,6 +133,7 @@ models:
     description: Encounters per month per encounter class (3,276).
     columns:
       - name: encounter_month
+        description: Month of started_at. Spans 1927-2026; Synthea backdates visits.
         tests:
           - not_null
       - name: encounter_class
@@ -130,3 +153,7 @@ models:
       - name: encounter_count
         tests:
           - not_null
+      - name: unique_patients
+        description: Distinct patients. Do not sum across months -- people repeat.
+      - name: total_claim_cost
+        description: Synthea's own encounter cost. Does not tie to claim payments.

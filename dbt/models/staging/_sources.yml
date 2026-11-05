@@ -12,36 +12,43 @@ sources:
       # Seven tables have a single-column primary key. Testing it here means a
       # broken load fails at the source, before it reaches staging or marts.
       - name: patients
+        description: One row per patient. 1,096 rows.
         columns:
           - name: Id
             tests: [not_null, unique]
 
       - name: providers
+        description: One row per provider. 152 rows. One provider per organisation.
         columns:
           - name: Id
             tests: [not_null, unique]
 
       - name: organizations
+        description: One row per organisation. 152 rows.
         columns:
           - name: Id
             tests: [not_null, unique]
 
       - name: payers
+        description: One row per payer. 10 rows. Address columns are blank in all of them.
         columns:
           - name: Id
             tests: [not_null, unique]
 
       - name: encounters
+        description: Care visits. 57,592 rows.
         columns:
           - name: Id
             tests: [not_null, unique]
 
       - name: claims
+        description: Claim headers. 97,394 rows. REFERRINGPROVIDERID is null in every row.
         columns:
           - name: Id
             tests: [not_null, unique]
 
       - name: claims_transactions
+        description: Claim lines. 902,713 rows. Primary key is ID, uppercase.
         columns:
           # Uppercase ID -- the only table that is not Id.
           - name: ID
@@ -53,6 +60,7 @@ sources:
       # is the meaningful assertion. `start` is skipped on three of them
       # because it is a reserved word in Snowflake.
       - name: payer_transitions
+        description: Payer membership over time. No Id. MEMBERID is null for government payers.
         columns:
           - name: PATIENT
             tests: [not_null]
@@ -62,6 +70,7 @@ sources:
             tests: [not_null]
 
       - name: conditions
+        description: Diagnoses. No Id.
         columns:
           - name: PATIENT
             tests: [not_null]
@@ -71,6 +80,7 @@ sources:
             tests: [not_null]
 
       - name: medications
+        description: Prescriptions. No Id.
         columns:
           - name: PATIENT
             tests: [not_null]
@@ -80,6 +90,7 @@ sources:
             tests: [not_null]
 
       - name: procedures
+        description: Procedures performed. No Id.
         columns:
           - name: PATIENT
             tests: [not_null]

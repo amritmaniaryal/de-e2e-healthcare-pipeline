@@ -89,6 +89,37 @@ fact table that grows daily, which is a trade-off discussed in the design notes.
 
 ---
 
+## dbt
+
+Three layers, 19 models, 95 tests. `staging` renames the raw tables 1:1,
+`intermediate` joins them, `marts` answers the dashboard questions.
+
+![dbt lineage: eleven raw sources through staging and intermediate to six marts](docs/dbt-lineage.png)
+
+*The full lineage graph. Green nodes are the eleven raw source tables, blue are
+staging and intermediate models, purple are the six marts. The five `assert_*`
+nodes are custom tests — they appear in the graph because dbt derives their
+dependencies from the models they `ref()`.*
+
+| layer | models | materialised as | purpose |
+|---|---|---|---|
+| `staging` | 11 | view | 1:1 with `raw`, columns renamed to snake_case |
+| `intermediate` | 2 | view | claims and encounters joined and enriched |
+| `marts` | 6 | table | 2 dimensions, 1 fact, 3 aggregates |
+
+![dim_patients model page showing details, description and columns](docs/dbt-model-detail.png)
+
+*`dim_patients`. The row count, size and last-modified come from Snowflake's
+catalog; the description, tests and lineage come from the project. Views have no
+row count — which is why the marts are tables.*
+
+**Tests run at every layer**, not just at the top: 27 on the raw sources, 32 on
+staging, 27 on the marts, and 6 custom. Each layer asserts what it guarantees,
+so a failure points at the layer that broke rather than just reporting that
+something is wrong.
+
+---
+
 ## Status
 
 | Stage | State |
@@ -98,8 +129,10 @@ fact table that grows daily, which is a trade-off discussed in the design notes.
 | Spark clean → S3 `processed/` | ✅ 11 tasks, ~9.8 min |
 | Data-quality gate | ✅ Schema-fidelity check before every clean |
 | Snowflake load | ✅ 11 tasks, counts verified |
-| dbt transformation | ⬜ Week 4 |
-| CI/CD, BI layer, docs | ⬜ Week 5 |
+| dbt transformation | ✅ 19 models, staging → intermediate → marts |
+| dbt tests | ✅ 95, across sources, staging and marts |
+| dbt docs | ✅ lineage graph + model pages |
+| CI/CD, BI layer | ⬜ Week 5 |
 
 The full chain — `extract` → `transform` → `load` — runs as **33 mapped tasks in
 one DAG**, all green.
