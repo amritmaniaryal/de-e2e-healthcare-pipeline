@@ -1,9 +1,25 @@
 """Screenshot the dbt docs site by driving headless Chrome over CDP.
 
-Why this exists: `--headless --screenshot` ignores URL hash fragments, and the
-dbt docs site routes entirely by hash, so a plain headless call can only ever
-capture the welcome page. Driving Chrome over the DevTools Protocol lets us
-create a real page, navigate, click, and capture.
+WHY THIS EXISTS
+    `--headless --screenshot` ignores URL hash fragments, and the dbt docs site
+    routes entirely by hash, so a plain headless call can only ever capture the
+    welcome page. Driving Chrome over the DevTools Protocol lets us create a
+    real page, navigate, click, and capture.
+
+KNOWN LIMITATION -- node selection
+    docs/dbt-lineage.png shows `agg_utilization_trends` selected (pink) with its
+    upstream path highlighted. This script does NOT reproduce that; it captures
+    the graph unselected.
+
+    The graph's node labels are not reachable as laid-out DOM: every candidate
+    element matching a node name reports a 0x0 bounding box, so there are no
+    screen coordinates to send Input.dispatchMouseEvent to. Dispatching a
+    synthetic click in JS does work, but it triggers dbt's `+model+` filter,
+    which rebuilds the graph with only that one lineage -- hiding 14 of the 19
+    models.
+
+    To regenerate the highlighted version, open the docs in a real browser and
+    select the node by hand.
 
 Usage: python tools/shot_dbt_docs.py
 """
