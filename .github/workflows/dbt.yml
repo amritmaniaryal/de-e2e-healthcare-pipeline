@@ -7,11 +7,7 @@
 # unmerged branch. The `ci` target writes ci_staging / ci_marts instead. The
 # marts schema is derived from the target name in dbt_project.yml, so the build
 # below reaches the right schemas without a --vars flag to mistype.
-#
-# WHY A KEY PAIR
-# --------------
-# The account requires MFA for password logins, and a runner cannot answer an
-# MFA challenge. Key-pair auth sends a signature, never the key itself.
+
 
 name: dbt
 
@@ -79,9 +75,7 @@ jobs:
       - name: Show versions
         run: dbt --version
 
-      # working-directory + --profiles-dir: profiles.yml lives inside dbt/, not
-      # in ~/.dbt. Locally that resolves from the environment; on a runner
-      # nothing points at it, so it has to be stated.
+      # working-directory + --profiles-dir: profiles.yml lives inside dbt/.
       - name: dbt build
         working-directory: dbt
         run: dbt build --target ci --profiles-dir .
