@@ -15,5 +15,9 @@ dbt/dbt_packages/
 dbt/logs/
 dbt/.user.yml
 
+# private keys — never commit
+*.p8
+*.pub
+
 # headless Chrome profiles used by tools/shot_dbt_docs.py
 .chrome-*/
