@@ -1,0 +1,81 @@
+# dbt CI -- build the project on every pull request.
+#
+# WHY A SEPARATE TARGET
+# ---------------------
+# `dbt build` writes. Left on the `dev` target it would rebuild healthcare.staging
+# and healthcare.marts on every PR, so the published tables would depend on an
+# unmerged branch. The `ci` target writes ci_staging / ci_marts instead. The
+# marts schema is derived from the target name in dbt_project.yml, so the build
+# below reaches the right schemas without a --vars flag to mistype.
+
+
+name: dbt
+
+on:
+  pull_request:
+    branches: [main]
+    # Keep `synchronize` while iterating: a pushed fix re-runs the build. Drop it
+    # later and the job only runs on open / reopen / ready-for-review, which
+    # costs fewer warehouse sessions but means fixes are tested only when asked.
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:   # manual run without pushing -- useful for a demo
+
+permissions:
+  contents: read
+
+# One run per branch: a new push cancels the superseded run instead of paying
+# for both. Note that separate PRs still share ci_staging / ci_marts, so avoid
+# having two open at once.
+concurrency:
+  group: dbt-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dbt:
+    name: dbt build
+    runs-on: ubuntu-latest
+    # A hung run would otherwise idle for the 6h default.
+    timeout-minutes: 20
+
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: dbt/requirements.txt
+
+      - name: Install dbt
+        run: pip install -r dbt/requirements.txt
+
+      # The key is stored base64-encoded because a PEM pasted raw into a secret
+      # loses its newlines, and the resulting failure ("Invalid private key")
+      # points at nothing useful. It is written to $RUNNER_TEMP -- the one
+      # directory guaranteed writable -- and exported through $GITHUB_ENV so
+      # later steps see SNOWFLAKE_PRIVATE_KEY_PATH.
+      - name: Write Snowflake private key
+        env:
+          SNOWFLAKE_PRIVATE_KEY_B64: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/rsa_key.p8"
+          printf '%s' "$SNOWFLAKE_PRIVATE_KEY_B64" | base64 -d > "$key_path"
+          chmod 600 "$key_path"
+          echo "SNOWFLAKE_PRIVATE_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      # First thing to read when CI resolves different versions than the host
+      # .venv does.
+      - name: Show versions
+        run: dbt --version
+
+      # working-directory + --profiles-dir: profiles.yml lives inside dbt/.
+      - name: dbt build
+        working-directory: dbt
+        run: dbt build --target ci --profiles-dir .
