@@ -1,0 +1,10 @@
+# dbt for the transformation layer.
+#
+# Pinned deliberately. The host .venv has been running dbt-core 1.13.0-b1 (a
+# beta) against dbt-snowflake 1.12.4, a pair the adapter itself warns about.
+# CI must be reproducible: pinning the adapter lets pip resolve a matching,
+# released dbt-core, so a green run today cannot turn red because a beta was
+# superseded upstream.
+#
+# Install:  pip install -r dbt/requirements.txt
+dbt-snowflake==1.12.4
