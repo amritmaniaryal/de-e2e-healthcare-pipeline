@@ -36,6 +36,7 @@ sys.path.insert(0, "/opt/airflow/include")
 
 from ingest.upload_raw import upload_one_file  # noqa: E402
 from schemas import TABLES  # noqa: E402
+from notifications import notify_failure  # noqa: E402
 
 SPARK_JOBS = "/opt/airflow/spark_jobs"
 SNOWFLAKE_CONN = "snowflake_default"
@@ -56,11 +57,6 @@ def spark_submit(script: str, table: str, ingestion_date: str) -> None:
     subprocess.run(cmd, check=True)
 
 
-def alert_on_failure(context):
-    """Alerting stub -- swap for Slack/email in Week 5."""
-    ti = context.get("task_instance")
-    print(f"FAILED: {ti.dag_id}.{ti.task_id} (run_id={ti.run_id})")
-
 
 @dag(
     dag_id="healthcare_pipeline",
@@ -71,8 +67,8 @@ def alert_on_failure(context):
     default_args={
         "retries": 1,
         "retry_delay": timedelta(minutes=2),
-        "on_failure_callback": alert_on_failure,
     },
+    on_failure_callback=notify_failure,
     tags=["pipeline", "s3", "spark", "snowflake"],
 )
 def healthcare_pipeline():
