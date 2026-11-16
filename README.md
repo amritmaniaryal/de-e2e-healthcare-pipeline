@@ -135,10 +135,12 @@ Auth is a **key pair**, not a password: the account enforces MFA on password
 logins, and no unattended runner can answer an MFA challenge. Key-pair auth
 sends a signature, never the key.
 
-The cost is worth stating: the workflow triggers on **any** PR, so a docs-only
-change still pays for a full build. A `paths:` filter is the obvious fix and the
-wrong one while the check is required — a check that never runs leaves the PR
-permanently unmergeable.
+The job checks the full PR diff **inside the workflow** and skips Python setup
+and `dbt build` unless something under `dbt/` or `.github/workflows/dbt.yml`
+changed (manual `workflow_dispatch` runs always execute). A trigger-level
+`paths:` filter would leave a required status check stuck in *Expected* on
+docs-only PRs; checking inside the job keeps the `dbt build` check green with
+zero Snowflake cost.
 
 ---
 
@@ -438,10 +440,6 @@ Nothing here blocks the project; it is ordered by what I would do first.
 - **Make `fct_claims_transactions` incremental.** Rebuilding 902,713 rows on every
   run is the largest cost in the chain. The trade-off is the complexity of
   tracking what is new, which is why it was deferred.
-- **Filter CI by path.** `paths: 'dbt/**'` would stop docs-only PRs paying for a
-  full warehouse build, but a *required* status check that never runs leaves the
-  PR unmergeable. It needs a companion job that reports success when nothing
-  dbt-related changed.
 - **Publish the writeup.** The last unchecked item on the checklist: a short blog
   or LinkedIn post pointing at this repo.
 
