@@ -15,30 +15,26 @@ transactions), which is the point — the pipeline has to handle both.
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    synth["Synthea generator<br/>18 CSV exports, run locally"]
+    raw["S3 · raw/&lt;table&gt;/ingestion_date=DATE"]
+    processed["S3 · processed/&lt;table&gt;/_ingested_date=DATE"]
+    snowraw["Snowflake · healthcare.raw"]
+    marts["Snowflake · healthcare.marts<br/>2 dims · 1 fact · 3 aggregates"]
+    dash["Streamlit dashboard<br/>read-only"]
+
+    synth -->|"extract · 11 mapped tasks"| raw
+    raw -->|"transform · 11 mapped tasks<br/>validate_table.py then clean_table.py"| processed
+    processed -->|"load · 11 mapped tasks<br/>TRUNCATE + COPY INTO"| snowraw
+    snowraw -->|"dbt · 19 models · 95 tests"| marts
+    marts --> dash
 ```
-[Synthea synthetic generator]  (Java, run locally)
-        │  18 CSV exports
-        ▼
-┌─ Airflow: healthcare_pipeline ───────────────────────────────────┐
-│                                                                  │
-│  extract (11 tasks)   upload CSVs untouched                      │
-│        │                    ▼                                    │
-│        │            S3  raw/<table>/ingestion_date=<date>/       │
-│        ▼                                                         │
-│  transform (11 tasks) validate_table.py  ← schema-fidelity gate   │
-│                       clean_table.py     ← dedupe, type, Parquet  │
-│        │                    ▼                                    │
-│        │            S3  processed/<table>/_ingested_date=<date>/  │
-│        ▼                                                         │
-│  load (11 tasks)      TRUNCATE + COPY INTO                        │
-│                       Snowflake  healthcare.raw.<table>           │
-│                                                                  │
-└──────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-[dbt: staging → intermediate → marts] ──► [BI dashboard]
-            (Week 4)                        (Week 5)
-```
+
+Two things run alongside that line. **GitHub Actions** rebuilds the project on
+every pull request into `ci_staging` and `ci_marts`, so a branch can never
+overwrite what the dashboard reads. And the DAG posts **one Slack message per
+failed run** — a callback on the DAG, not on each of the 33 task instances.
 
 ---
 
@@ -122,6 +118,56 @@ something is wrong.
 
 ---
 
+## CI
+
+Every pull request runs `dbt build` against Snowflake in GitHub Actions
+(`.github/workflows/dbt.yml`). One command, not two: `dbt build` already runs the
+models *and* their tests, per model in dependency order, and it skips a model's
+children when its tests fail — so a broken staging model stops the marts from
+being rebuilt at all.
+
+The job writes to `ci_staging` and `ci_marts`, never to `staging` or `marts`.
+Credentials arrive as repository secrets; the Snowflake private key is stored
+base64-encoded and decoded onto the runner, because a PEM pasted raw into a
+secret box loses its newlines.
+
+Auth is a **key pair**, not a password: the account enforces MFA on password
+logins, and no unattended runner can answer an MFA challenge. Key-pair auth
+sends a signature, never the key.
+
+The cost is worth stating: the workflow triggers on **any** PR, so a docs-only
+change still pays for a full build. A `paths:` filter is the obvious fix and the
+wrong one while the check is required — a check that never runs leaves the PR
+permanently unmergeable.
+
+---
+
+## Dashboard
+
+![Streamlit dashboard: headline metrics, top providers and procedures, utilization over time, patient demographics](docs/dashboard.png)
+
+*Six read-only queries against `healthcare.marts`. The metrics are the numbers
+this README quotes throughout — $146.7M paid, 97,394 claims, 1,096 patients, 674
+procedure codes — and `sum(total_paid)` reconciles to `sum(paid_amount)` in the
+fact table to the cent.*
+
+```bash
+pip install -r dashboard/requirements.txt
+set -a; source .env; set +a          # same SNOWFLAKE_* variables dbt reads
+streamlit run dashboard/app.py
+```
+
+**Every query is cached for ten minutes.** Streamlit reruns the whole script on
+each interaction, and every uncached query resumes the warehouse for a
+60-second minimum — the cache is what keeps a clicking session to one resume.
+
+**Payments, not charges.** Charges are what was billed; payments are what was
+paid, and the only figure traceable to claim lines. Codes charged but not yet
+paid are left out of the chart rather than sorted to the top, which is where
+Snowflake puts their nulls.
+
+---
+
 ## Status
 
 | Stage | State |
@@ -134,7 +180,9 @@ something is wrong.
 | dbt transformation | ✅ 19 models, staging → intermediate → marts |
 | dbt tests | ✅ 95, across sources, staging and marts |
 | dbt docs | ✅ lineage graph + model pages |
-| CI/CD, BI layer | ⬜ Week 5 |
+| CI gate | ✅ `dbt build` on every PR, into throwaway `ci_*` schemas |
+| Failure alerting | ✅ one Slack message per failed run |
+| BI dashboard | ✅ Streamlit, six read-only queries over the marts |
 
 The full chain — `extract` → `transform` → `load` — runs as **33 mapped tasks in
 one DAG**, all green.
@@ -153,9 +201,10 @@ simulated clinical history.
 | **PySpark 3.5** | Processes the whole dataset in one JVM without loading it into memory |
 | **Amazon S3** | Cheap durable object storage; the `raw/` → `processed/` zone boundary makes reprocessing explicit |
 | **Docker Compose** | Reproducible local stack — Airflow, Postgres, and the Spark runtime in one command |
-| **Snowflake** | Columnar warehouse with native `COPY INTO` from S3 *(Week 3)* |
-| **dbt** | Version-controlled SQL with tests and lineage *(Week 4)* |
-| **GitHub Actions** | Fails a PR when a dbt test fails *(Week 5)* |
+| **Snowflake** | Columnar warehouse with native `COPY INTO` from S3 |
+| **dbt** | Version-controlled SQL: 19 models, 95 tests, generated lineage |
+| **GitHub Actions** | Gates every PR on `dbt build`, writing to a throwaway `ci_*` schema so a branch can never overwrite published tables |
+| **Streamlit** | The dashboard: one Python file reading the marts, with no BI server to host |
 
 ---
 
@@ -314,6 +363,17 @@ problems: duplicates mean the source repeated a row, null keys mean the
 *primary key is wrong*. Collapsing them into one number is how a broken key
 goes unnoticed — see lessons below.
 
+**CI builds into throwaway schemas.** `dbt build` writes, so on a pull request it
+runs with `--target ci`: staging and intermediate land in
+`healthcare.ci_staging`, the marts in `healthcare.ci_marts`. A plain `ci` target
+was not enough — `generate_schema_name` returns a custom schema verbatim, so
+`+schema: marts` ignored the target and a PR would still have rebuilt the real
+marts. The marts schema now derives from `target.name`, which also removes a
+`--vars` flag that could be mistyped into a silent fallback. Both schemas
+**persist** between runs, because dbt creates schemas and never drops them: they
+hold the last PR's output as scratch space. Nothing reads them, and the `dev`
+target is the only thing that writes `staging` and `marts`.
+
 ---
 
 ## Lessons learned
@@ -349,16 +409,41 @@ empty CSV fields (`nullValue`, `emptyValue`, both) were all wrong, confirmed by
 a ten-row fixture in about a minute. Reasoning about Spark's CSV options had
 already produced two wrong answers.
 
+**Snowflake changed the auth model mid-project.** `dbt build` stopped with
+`Multi-factor authentication is required for this account` — the account now
+enforces MFA on password logins, which blocked local runs and CI at the same
+time. Key-pair auth was the fix: each session sends a signature, never the key,
+and no MFA prompt is involved. Two traps on the way: `env_var()` output is not
+shell-expanded, so `SNOWFLAKE_PRIVATE_KEY_PATH=~/…` fails as "file not found";
+and a PEM pasted raw into a GitHub secret loses its newlines, so it goes in
+base64-encoded.
+
+**A branch cut from an unmerged branch carries both.** The alerting work was
+started from the CI branch before CI had merged, so its pull request contained
+six commits — five of which were already on `main`. Git's cleanup is mechanical
+(`git fetch`, `git rebase origin/main`, `git push --force-with-lease`), but the
+cost is real: two rounds of "is this merged?" confusion, because `git status`
+compares against *cached* remote refs and reports last week's state until you
+fetch.
+
 ---
 
-## Roadmap
+## Next
 
-- **Week 4** — dbt models: staging → intermediate → marts, with tests and
-  generated lineage docs
-- **Week 5** — GitHub Actions running `dbt build` on PR, failure alerting, a
-  BI dashboard, and screenshots here
-- **After** — put the pipeline on a schedule (it is manual-trigger only today),
-  and make the large fact table an incremental load instead of a full refresh
+Nothing here blocks the project; it is ordered by what I would do first.
+
+- **Schedule the pipeline.** `healthcare_pipeline` is still `schedule=None`, so it
+  only runs when triggered by hand — the last unmet clause from the original
+  plan. Alerting now exists, which is what makes an unattended run safe.
+- **Make `fct_claims_transactions` incremental.** Rebuilding 902,713 rows on every
+  run is the largest cost in the chain. The trade-off is the complexity of
+  tracking what is new, which is why it was deferred.
+- **Filter CI by path.** `paths: 'dbt/**'` would stop docs-only PRs paying for a
+  full warehouse build, but a *required* status check that never runs leaves the
+  PR unmergeable. It needs a companion job that reports success when nothing
+  dbt-related changed.
+- **Publish the writeup.** The last unchecked item on the checklist: a short blog
+  or LinkedIn post pointing at this repo.
 
 ---
 
