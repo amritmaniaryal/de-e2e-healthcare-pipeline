@@ -1,0 +1,7 @@
+# Dashboard dependencies -- installed into the host .venv, not the Airflow image.
+#
+# snowflake-connector-python is already present (dbt-snowflake depends on it);
+# it is listed so the dashboard stands alone.
+streamlit>=1.40
+snowflake-connector-python>=3.12
+pandas>=2.2
