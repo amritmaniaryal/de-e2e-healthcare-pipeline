@@ -66,7 +66,10 @@ jobs:
           changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
           echo "Changed files:"
           echo "$changed"
-          if echo "$changed" | grep -qE '^(dbt/|\.github/workflows/dbt\.yml$)'; then
+          # Herestring, not a pipe: `grep -q` exits on first match, and with
+          # `pipefail` the SIGPIPE that gives `echo` would fail the pipeline and
+          # read as "no dbt changes" -- a skipped build reported as green.
+          if grep -qE '^(dbt/|\.github/workflows/dbt\.yml$)' <<< "$changed"; then
             echo "run_dbt=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_dbt=false" >> "$GITHUB_OUTPUT"
