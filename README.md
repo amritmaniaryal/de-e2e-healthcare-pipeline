@@ -154,6 +154,7 @@ procedure codes — and `sum(total_paid)` reconciles to `sum(paid_amount)` in th
 fact table to the cent.*
 
 ```bash
+python -m venv .venv && source .venv/bin/activate    # Python 3.12+
 pip install -r dashboard/requirements.txt
 set -a; source .env; set +a          # same SNOWFLAKE_* variables dbt reads
 streamlit run dashboard/app.py
