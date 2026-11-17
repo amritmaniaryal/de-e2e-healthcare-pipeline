@@ -142,6 +142,14 @@ changed (manual `workflow_dispatch` runs always execute). A trigger-level
 docs-only PRs; checking inside the job keeps the `dbt build` check green with
 zero Snowflake cost.
 
+**Publishing is separate from checking.** A PR build goes to `ci_*` and is then
+discarded, so merging does not update `staging` or `marts` — the dashboard would
+keep serving the previous numbers. `.github/workflows/dbt-deploy.yml` closes that
+gap: every push to `main` runs `dbt build --target prod` onto the real schemas.
+Same models, same tests; the target is the only difference between checking a
+branch and publishing it. Merging already requires a green check, so the deploy
+does not re-test — it publishes what CI validated.
+
 ---
 
 ## Dashboard
