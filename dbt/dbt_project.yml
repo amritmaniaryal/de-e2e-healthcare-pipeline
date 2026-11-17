@@ -10,4 +10,7 @@ models:
       +materialized: view
     marts:
       +materialized: table
-      +schema: "{{ var('marts_schema', 'marts' if target.name == 'dev' else target.name ~ '_marts') }}"
+      # `prod` publishes into the same marts schema `dev` builds, so only `ci`
+      # is prefixed. The list is explicit rather than "everything except ci" so
+      # a new target has to be considered on purpose, not silently publish.
+      +schema: "{{ var('marts_schema', 'marts' if target.name in ('dev', 'prod') else target.name ~ '_marts') }}"

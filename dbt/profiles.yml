@@ -21,3 +21,15 @@ healthcare:
       database: healthcare
       schema: ci_staging
       threads: 4
+    # Publishes. Same schemas as dev on purpose: `dev` and `prod` are the same
+    # place, the difference is only who triggers the build (you, or a merge).
+    prod:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      database: healthcare
+      schema: staging
+      threads: 4

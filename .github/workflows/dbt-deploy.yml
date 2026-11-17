@@ -1,0 +1,69 @@
+# dbt deploy -- publish to the real schemas after a merge.
+#
+# WHY THIS EXISTS
+# ---------------
+# The PR workflow builds into ci_staging / ci_marts and then throws the result
+# away. Merging only proves the branch works; it does not update what the
+# dashboard reads. This job closes that gap: merge to main -> build onto
+# staging / marts.
+#
+# It does not re-test. Merging already requires a green `dbt build` check (branch
+# protection), so the models on main are the ones CI just validated; this runs
+# the same build with `--target prod` and publishes it.
+
+name: dbt deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # manual publish without merging anything
+
+permissions:
+  contents: read
+
+# Never cancel a publish halfway: two merges in quick succession should run one
+# after the other, not fight over the same tables.
+concurrency:
+  group: dbt-prod
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: dbt build (prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: dbt/requirements.txt
+
+      - name: Install dbt
+        run: pip install -r dbt/requirements.txt
+
+      - name: Write Snowflake private key
+        env:
+          SNOWFLAKE_PRIVATE_KEY_B64: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/rsa_key.p8"
+          printf '%s' "$SNOWFLAKE_PRIVATE_KEY_B64" | base64 -d > "$key_path"
+          chmod 600 "$key_path"
+          echo "SNOWFLAKE_PRIVATE_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      # `--target prod` resolves staging/intermediate to `staging` and the marts
+      # to `marts`, because dbt_project.yml only prefixes the schema for `ci`.
+      # If this ever writes to `prod_marts`, that conditional is wrong.
+      - name: dbt build
+        working-directory: dbt
+        run: dbt build --target prod --profiles-dir .
