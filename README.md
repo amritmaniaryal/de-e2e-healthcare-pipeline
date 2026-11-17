@@ -136,11 +136,16 @@ logins, and no unattended runner can answer an MFA challenge. Key-pair auth
 sends a signature, never the key.
 
 The job checks the full PR diff **inside the workflow** and skips Python setup
-and `dbt build` unless something under `dbt/` or `.github/workflows/dbt.yml`
-changed (manual `workflow_dispatch` runs always execute). A trigger-level
-`paths:` filter would leave a required status check stuck in *Expected* on
-docs-only PRs; checking inside the job keeps the `dbt build` check green with
-zero Snowflake cost.
+and `dbt build` unless something under `dbt/` or `.github/workflows/` changed
+(manual `workflow_dispatch` runs always execute). A trigger-level `paths:` filter
+would leave a required status check stuck in *Expected* on docs-only PRs;
+checking inside the job keeps the `dbt build` check green with zero Snowflake
+cost.
+
+Workflow files are watched as a **directory**, not by name, and linted with
+`actionlint` before that check runs — seconds, no warehouse. `dbt build` cannot
+validate YAML, so a PR that edits the deploy workflow needs a guard of its own;
+without one, its first execution would be live against production tables.
 
 **Publishing is separate from checking.** A PR build goes to `ci_*` and is then
 discarded, so merging does not update `staging` or `marts` — the dashboard would

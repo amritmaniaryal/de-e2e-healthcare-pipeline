@@ -13,7 +13,11 @@
 # Using `on.pull_request.paths` skips the workflow altogether on non-dbt PRs,
 # which leaves a required status check stuck in "Expected". Instead, the job
 # checks the PR diff against the base branch and skips all setup/Snowflake
-# steps when nothing under `dbt/` or this workflow file changed.
+# steps when nothing under `dbt/` or `.github/workflows/` changed.
+#
+# The whole workflows directory is watched, not just this file: a change to
+# dbt-deploy.yml alters what gets published, and watching the directory means a
+# new workflow can never silently fall outside the filter.
 
 
 name: dbt
@@ -55,6 +59,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Lint the workflow files themselves. Seconds, no Snowflake, and it runs
+      # before the path check -- so a PR that only edits a workflow still gets
+      # validated, which `dbt build` cannot do: it never reads YAML.
+      - name: Lint workflows
+        run: |
+          set -euo pipefail
+          version=1.7.12
+          curl -sSL "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_amd64.tar.gz" \
+            | tar -xz actionlint
+          ./actionlint -color
+
       - name: Check for dbt-relevant changes
         id: changes
         run: |
@@ -69,7 +84,7 @@ jobs:
           # Herestring, not a pipe: `grep -q` exits on first match, and with
           # `pipefail` the SIGPIPE that gives `echo` would fail the pipeline and
           # read as "no dbt changes" -- a skipped build reported as green.
-          if grep -qE '^(dbt/|\.github/workflows/dbt\.yml$)' <<< "$changed"; then
+          if grep -qE '^(dbt/|\.github/workflows/)' <<< "$changed"; then
             echo "run_dbt=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_dbt=false" >> "$GITHUB_OUTPUT"
